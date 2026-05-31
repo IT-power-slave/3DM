@@ -4,9 +4,10 @@ import { Editor2DPanel } from '@3dm/editor-2d'
 import { Editor3DPanel } from '@3dm/editor-3d'
 import { Viewer3DPanel } from '@3dm/viewer-3d'
 import { ExportPanel } from '@3dm/export'
+import { MaterialsPanel } from '@3dm/materials'
 import { bus } from '@3dm/event-bus'
 
-type PanelId = 'project' | '2d' | '3d' | 'viewer' | 'export'
+type PanelId = 'project' | '2d' | '3d' | 'viewer' | 'export' | 'materials'
 
 const PANELS: Array<{ id: PanelId; label: string }> = [
   { id: 'project', label: '📁 Project' },
@@ -14,6 +15,7 @@ const PANELS: Array<{ id: PanelId; label: string }> = [
   { id: '3d', label: '📦 3D Editor' },
   { id: 'viewer', label: '👁 Viewer' },
   { id: 'export', label: '💾 Export' },
+  { id: 'materials', label: '🎨 Materials' },
 ]
 
 function PanelError({ name }: { name: string }) {
@@ -95,6 +97,11 @@ export function Workspace(): React.ReactElement {
       <div style={panelVisible('export')}>
         <PanelErrorBoundary name="Export">
           <ExportPanel />
+        </PanelErrorBoundary>
+      </div>
+      <div style={panelVisible('materials')}>
+        <PanelErrorBoundary name="Materials">
+          <MaterialsPanel />
         </PanelErrorBoundary>
       </div>
     </div>

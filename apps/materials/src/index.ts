@@ -1,0 +1,1 @@
+export { MaterialsPanel } from './MaterialsPanel'

@@ -13,6 +13,7 @@
   "dependencies": {
     "@3dm/event-bus": "workspace:*",
     "@3dm/shared-contracts": "workspace:*",
+    "@3dm/materials": "workspace:*",
     "fabric": "^6.4.3",
     "jszip": "^3.10.1",
     "react": "^18.3.1",

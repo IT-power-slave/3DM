@@ -126,6 +126,31 @@ importers:
         specifier: ^5.5.0
         version: 5.9.3
 
+  apps/materials:
+    dependencies:
+      '@3dm/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@3dm/shared-contracts':
+        specifier: workspace:*
+        version: link:../../packages/shared-contracts
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.0
+        version: 18.3.29
+      '@types/react-dom':
+        specifier: ^18.3.0
+        version: 18.3.7(@types/react@18.3.29)
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   apps/project-manager:
     dependencies:
       '@3dm/event-bus':
@@ -162,6 +187,9 @@ importers:
       '@3dm/event-bus':
         specifier: workspace:*
         version: link:../../packages/event-bus
+      '@3dm/materials':
+        specifier: workspace:*
+        version: link:../materials
       '@3dm/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts

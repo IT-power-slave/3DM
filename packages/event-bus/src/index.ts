@@ -16,6 +16,11 @@ import type {
   PanelActivatedEvent,
   ProjectRestoreEvent,
   ProjectCommandEvent,
+  MaterialReference,
+  MaterialAssignmentRequest,
+  MaterialAssignmentResponse,
+  MaterialLibraryEvent,
+  SceneSelection,
 } from '@3dm/shared-contracts'
 
 // ─── Event Type Map ───────────────────────────────────────────────────────────
@@ -59,6 +64,15 @@ export interface EventMap {
   // EXPORT
   'export:request': ExportRequest
   'export:progress': ExportProgress
+
+  // Materials (MFE-MATERIALS)
+  'material:reference': MaterialReference
+  'material:assign': MaterialAssignmentRequest
+  'material:assign-ack': MaterialAssignmentResponse
+  'material:library': MaterialLibraryEvent
+
+  // 3D editor selection (MFE-3D → MFE-MATERIALS)
+  '3d:selection': SceneSelection
 }
 
 export type EventKey = keyof EventMap

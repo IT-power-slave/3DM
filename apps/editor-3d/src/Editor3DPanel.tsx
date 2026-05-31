@@ -11,6 +11,7 @@ import type {
   ShapeDescriptorBatch,
   GeometryType,
   GeometryParams,
+  MaterialDefinition,
 } from '@3dm/shared-contracts'
 import { SCHEMA_VERSION } from '@3dm/shared-contracts'
 import { bus } from '@3dm/event-bus'
@@ -30,6 +31,8 @@ interface ObjectMeta {
   objectType?: 'mesh' | 'merged-mesh'
   geometryType: GeometryType
   geometryParams: GeometryParams
+  /** Reference to a MaterialDefinition.materialId */
+  materialRef?: string
 }
 
 /** A single entry on the undo stack — currently only merge steps are tracked. */
@@ -86,6 +89,35 @@ function buildGeometry(type: GeometryType, params: GeometryParams): THREE.Buffer
   }
 }
 
+function buildMaterialFromDef(def: MaterialDefinition): THREE.Material {
+  if (def.shadingModel === 'lambert') {
+    return new THREE.MeshLambertMaterial({
+      color: new THREE.Color(def.diffuseColor.r, def.diffuseColor.g, def.diffuseColor.b),
+      opacity: def.opacity,
+      transparent: def.opacity < 1,
+    })
+  }
+  const mat = new THREE.MeshPhongMaterial({
+    color: new THREE.Color(def.diffuseColor.r, def.diffuseColor.g, def.diffuseColor.b),
+    opacity: def.opacity,
+    transparent: def.opacity < 1,
+  })
+  if (def.specularColor) {
+    mat.specular = new THREE.Color(def.specularColor.r, def.specularColor.g, def.specularColor.b)
+  }
+  if (def.shininess != null) mat.shininess = def.shininess
+  return mat
+}
+
+function replaceMeshMaterial(mesh: THREE.Mesh, newMat: THREE.Material): void {
+  if (Array.isArray(mesh.material)) {
+    mesh.material.forEach((m) => m.dispose())
+  } else {
+    (mesh.material as THREE.Material).dispose()
+  }
+  mesh.material = newMat
+}
+
 export function Editor3DPanel(): React.ReactElement {
   const mountRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -96,6 +128,7 @@ export function Editor3DPanel(): React.ReactElement {
   const frameIdRef = useRef<number>(0)
   const objectsRef = useRef<Map<string, THREE.Mesh>>(new Map())
   const metaRef = useRef<Map<string, ObjectMeta>>(new Map())
+  const materialLibRef = useRef<Map<string, MaterialDefinition>>(new Map())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [objectList, setObjectList] = useState<ObjectMeta[]>([])
   const [transformMode, setTransformMode] = useState<TransformMode>('translate')
@@ -249,6 +282,7 @@ export function Editor3DPanel(): React.ReactElement {
         geometryType: isMerged ? undefined : meta?.geometryType,
         geometryParams: isMerged ? undefined : meta?.geometryParams,
         color: meta?.color,
+        materialRef: meta?.materialRef,
         // For merged objects, send the full serialized geometry so the viewer
         // can reconstruct the exact merged shape instead of falling back to a cube.
         geometryJSON: isMerged ? (mesh.geometry.toJSON() as unknown as Record<string, unknown>) : undefined,
@@ -328,6 +362,11 @@ export function Editor3DPanel(): React.ReactElement {
     } else {
       tc.detach()
     }
+    // Publish selection so MFE-MATERIALS knows which objects are targeted for assignment
+    bus.emit('3d:selection', {
+      schemaVersion: SCHEMA_VERSION,
+      objectIds: id ? [id] : [],
+    })
   }, [])
 
   // Change transform mode
@@ -610,6 +649,72 @@ export function Editor3DPanel(): React.ReactElement {
     })
     return unsub
   }, [addMesh, publishSnapshot])
+
+  // Listen for material reference updates — keep local map in sync
+  useEffect(() => {
+    const unsub = bus.on('material:reference', (ref) => {
+      if (ref.action === 'deleted') {
+        materialLibRef.current.delete(ref.material.materialId)
+        // Revert objects assigned this material to their original color
+        metaRef.current.forEach((meta, id) => {
+          if (meta.materialRef === ref.material.materialId) {
+            const updatedMeta = { ...meta, materialRef: undefined }
+            metaRef.current.set(id, updatedMeta)
+            const mesh = objectsRef.current.get(id)
+            if (mesh) replaceMeshMaterial(mesh, new THREE.MeshStandardMaterial({ color: meta.color ?? '#3b82f6' }))
+          }
+        })
+        publishSnapshot()
+      } else {
+        materialLibRef.current.set(ref.material.materialId, ref.material)
+        // Live-update any meshes already assigned this material
+        metaRef.current.forEach((meta, id) => {
+          if (meta.materialRef === ref.material.materialId) {
+            const mesh = objectsRef.current.get(id)
+            if (mesh) replaceMeshMaterial(mesh, buildMaterialFromDef(ref.material))
+          }
+        })
+      }
+    })
+    return unsub
+  }, [publishSnapshot])
+
+  // Listen for material assignment requests from MFE-MATERIALS
+  useEffect(() => {
+    const unsub = bus.on('material:assign', (req) => {
+      const accepted: string[] = []
+      const rejected: Array<{ objectId: string; reason: string }> = []
+
+      const targetIds = req.objectIds.length > 0
+        ? req.objectIds
+        : (selectedId ? [selectedId] : [])
+
+      targetIds.forEach((objId) => {
+        const meta = metaRef.current.get(objId)
+        if (!meta) {
+          rejected.push({ objectId: objId, reason: 'Object not found' })
+          return
+        }
+        metaRef.current.set(objId, { ...meta, materialRef: req.materialId })
+        const mesh = objectsRef.current.get(objId)
+        const matDef = materialLibRef.current.get(req.materialId)
+        if (mesh && matDef) {
+          replaceMeshMaterial(mesh, buildMaterialFromDef(matDef))
+        }
+        accepted.push(objId)
+      })
+
+      bus.emit('material:assign-ack', {
+        schemaVersion: SCHEMA_VERSION,
+        requestId: req.requestId,
+        accepted,
+        rejected,
+      })
+
+      if (accepted.length > 0) publishSnapshot()
+    })
+    return unsub
+  }, [selectedId, publishSnapshot])
 
   // Restore scene from project
   useEffect(() => {

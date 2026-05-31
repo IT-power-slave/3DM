@@ -42,7 +42,7 @@ export const EMPTY_PROJECT_CONTEXT: ProjectContext = {
 
 // ─── Dirty-State Signal Contract ─────────────────────────────────────────────
 
-export type DirtyStateSource = 'mfe-2d' | 'mfe-3d'
+export type DirtyStateSource = 'mfe-2d' | 'mfe-3d' | 'mfe-materials'
 
 export interface DirtyStateSignal {
   schemaVersion: typeof SCHEMA_VERSION
@@ -60,7 +60,7 @@ export interface ShellReadySignal {
 
 // ─── MFE Ready Signal ─────────────────────────────────────────────────────────
 
-export type MfeId = 'mfe-project' | 'mfe-2d' | 'mfe-3d' | 'mfe-viewer' | 'mfe-export'
+export type MfeId = 'mfe-project' | 'mfe-2d' | 'mfe-3d' | 'mfe-viewer' | 'mfe-export' | 'mfe-materials'
 export type MfeCriticality = 'critical' | 'non-critical'
 
 export interface MfeReadySignal {
@@ -279,6 +279,8 @@ export interface SceneObject {
   geometryParams?: GeometryParams
   /** Hex color string, e.g. '#3b82f6' */
   color?: string
+  /** References a MaterialDefinition.materialId; downstream consumers apply visual material properties */
+  materialRef?: string
   /**
    * Edge topology for wireframe rendering on merged-mesh objects.
    * Flat array of vertex-index pairs: [i0, i1, i2, i3, ...] where each pair defines one edge.
@@ -343,6 +345,8 @@ export interface ProjectRestoreEvent {
   svgData?: string
   /** Full scene snapshot to restore 3D scene (undefined = no 3D state) */
   sceneSnapshot?: SceneSnapshot
+  /** Material library to restore in MFE-MATERIALS (undefined = clear to empty) */
+  materialLibrary?: MaterialDefinition[]
 }
 
 // ─── Project Command Event ────────────────────────────────────────────────────
@@ -351,4 +355,55 @@ export type ProjectCommandType = 'new' | 'open' | 'save' | 'save-as' | 'close'
 
 export interface ProjectCommandEvent {
   command: ProjectCommandType
+}
+
+// ─── Material Contracts (MFE-MATERIALS) ───────────────────────────────────────
+
+export type MaterialShadingModel = 'lambert' | 'phong-blinn'
+
+export interface MaterialDefinition {
+  materialId: string
+  name: string
+  shadingModel: MaterialShadingModel
+  /** Normalized floats [0.0, 1.0] */
+  diffuseColor: { r: number; g: number; b: number }
+  /** Normalized floats [0.0, 1.0]; null when shadingModel is 'lambert' */
+  specularColor: { r: number; g: number; b: number } | null
+  /** Integer 1–256; null when shadingModel is 'lambert' */
+  shininess: number | null
+  /** 0.0 (transparent) – 1.0 (fully opaque) */
+  opacity: number
+}
+
+export interface MaterialReference {
+  schemaVersion: typeof SCHEMA_VERSION
+  material: MaterialDefinition
+  /** 'upsert' = created or updated; 'deleted' = remove all references to this material */
+  action: 'upsert' | 'deleted'
+}
+
+export interface MaterialAssignmentRequest {
+  schemaVersion: typeof SCHEMA_VERSION
+  requestId: string
+  materialId: string
+  /** Scene object IDs to assign the material to. Empty array = use current selection in MFE-3D */
+  objectIds: string[]
+}
+
+export interface MaterialAssignmentResponse {
+  schemaVersion: typeof SCHEMA_VERSION
+  requestId: string
+  accepted: string[]
+  rejected: Array<{ objectId: string; reason: string }>
+}
+
+export interface MaterialLibraryEvent {
+  schemaVersion: typeof SCHEMA_VERSION
+  materials: MaterialDefinition[]
+}
+
+export interface SceneSelection {
+  schemaVersion: typeof SCHEMA_VERSION
+  /** IDs of objects currently selected in MFE-3D */
+  objectIds: string[]
 }

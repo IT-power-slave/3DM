@@ -43,7 +43,7 @@ export function ProjectManagerPanel(): React.ReactElement {
     return unsub
   }, [newProject, openProject, saveProject])
 
-  // Cache the latest canvas and scene snapshots so they're included in saves
+  // Cache the latest canvas, scene snapshots, and material library so they're included in saves
   useEffect(() => {
     const u1 = bus.on('canvas:snapshot', (snap) => {
       useProjectStore.getState().setCanvasSnapshot(snap)
@@ -51,7 +51,10 @@ export function ProjectManagerPanel(): React.ReactElement {
     const u2 = bus.on('scene:snapshot', (snap) => {
       useProjectStore.getState().setSceneSnapshot(snap)
     })
-    return () => { u1(); u2() }
+    const u3 = bus.on('material:library', (ev) => {
+      useProjectStore.getState().setMaterialLibrary(ev.materials)
+    })
+    return () => { u1(); u2(); u3() }
   }, [])
 
   // Propagate dirty signals from MFEs to project store

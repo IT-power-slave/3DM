@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ProjectContext, CanvasSnapshot, SceneSnapshot } from '@3dm/shared-contracts'
+import type { ProjectContext, CanvasSnapshot, SceneSnapshot, MaterialDefinition } from '@3dm/shared-contracts'
 import { EMPTY_PROJECT_CONTEXT, SCHEMA_VERSION } from '@3dm/shared-contracts'
 import { bus } from '@3dm/event-bus'
 import JSZip from 'jszip'
@@ -36,6 +36,7 @@ interface SavedProjectData {
   context: ProjectContext
   svgData?: string
   sceneSnapshot?: SceneSnapshot
+  materialLibrary?: MaterialDefinition[]
 }
 
 interface ProjectStore {
@@ -46,6 +47,7 @@ interface ProjectStore {
   // Latest snapshots from MFEs (cached for save)
   latestCanvasSnapshot: CanvasSnapshot | undefined
   latestSceneSnapshot: SceneSnapshot | undefined
+  latestMaterialLibrary: MaterialDefinition[] | undefined
 
   newProject: () => void
   openProject: () => Promise<void>
@@ -55,6 +57,7 @@ interface ProjectStore {
   setDirty: (isDirty: boolean) => void
   setCanvasSnapshot: (snap: CanvasSnapshot) => void
   setSceneSnapshot: (snap: SceneSnapshot) => void
+  setMaterialLibrary: (materials: MaterialDefinition[]) => void
   _publishContext: (ctx: Partial<ProjectContext>) => void
 }
 
@@ -68,9 +71,10 @@ async function serializeProject(
   ctx: ProjectContext,
   svgData?: string,
   sceneSnapshot?: SceneSnapshot,
+  materialLibrary?: MaterialDefinition[],
 ): Promise<Blob> {
   const zip = new JSZip()
-  const data: SavedProjectData = { context: ctx, svgData, sceneSnapshot }
+  const data: SavedProjectData = { context: ctx, svgData, sceneSnapshot, materialLibrary }
   zip.file('project.json', JSON.stringify(data, null, 2))
   if (svgData) zip.file('canvas.svg', svgData)
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
@@ -103,6 +107,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   autosaveTimer: undefined,
   latestCanvasSnapshot: undefined,
   latestSceneSnapshot: undefined,
+  latestMaterialLibrary: undefined,
 
   _publishContext: (partial) => {
     const next = { ...get().context, ...partial }
@@ -112,6 +117,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   setCanvasSnapshot: (snap) => set({ latestCanvasSnapshot: snap }),
   setSceneSnapshot: (snap) => set({ latestSceneSnapshot: snap }),
+
+  setMaterialLibrary: (materials) => set({ latestMaterialLibrary: materials }),
 
   newProject: () => {
     const ctx: ProjectContext = {
@@ -124,7 +131,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       status: 'open',
       lastSavedAt: undefined,
     }
-    set({ fileHandle: undefined, latestCanvasSnapshot: undefined, latestSceneSnapshot: undefined })
+    set({ fileHandle: undefined, latestCanvasSnapshot: undefined, latestSceneSnapshot: undefined, latestMaterialLibrary: undefined })
     get()._publishContext(ctx)
     // Clear MFE state
     bus.emit('project:restore', {})
@@ -162,13 +169,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         isOpen: true,
         status: 'open',
       }
-      set({ latestCanvasSnapshot: undefined, latestSceneSnapshot: undefined })
+      set({ latestCanvasSnapshot: undefined, latestSceneSnapshot: undefined, latestMaterialLibrary: undefined })
       get()._publishContext(ctx)
 
       // Restore MFE state from saved snapshots
       bus.emit('project:restore', {
         svgData: data.svgData,
         sceneSnapshot: data.sceneSnapshot,
+        materialLibrary: data.materialLibrary,
       })
     } catch (err) {
       console.error('[ProjectManager] Open failed:', err)
@@ -177,13 +185,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   saveProject: async () => {
-    const { context, fileHandle, latestCanvasSnapshot, latestSceneSnapshot } = get()
+    const { context, fileHandle, latestCanvasSnapshot, latestSceneSnapshot, latestMaterialLibrary } = get()
     try {
       get()._publishContext({ status: 'saving' })
       const blob = await serializeProject(
         context,
         latestCanvasSnapshot?.svgData,
         latestSceneSnapshot,
+        latestMaterialLibrary,
       )
 
       if (fileHandle && supportsFileSystemAccess) {
@@ -206,13 +215,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   saveProjectAs: async () => {
-    const { context, latestCanvasSnapshot, latestSceneSnapshot } = get()
+    const { context, latestCanvasSnapshot, latestSceneSnapshot, latestMaterialLibrary } = get()
     try {
       get()._publishContext({ status: 'saving' })
       const blob = await serializeProject(
         context,
         latestCanvasSnapshot?.svgData,
         latestSceneSnapshot,
+        latestMaterialLibrary,
       )
 
       if (supportsFileSystemAccess) {
@@ -240,7 +250,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   closeProject: () => {
-    set({ fileHandle: undefined, latestCanvasSnapshot: undefined, latestSceneSnapshot: undefined })
+    set({ fileHandle: undefined, latestCanvasSnapshot: undefined, latestSceneSnapshot: undefined, latestMaterialLibrary: undefined })
     get()._publishContext(EMPTY_PROJECT_CONTEXT)
   },
 

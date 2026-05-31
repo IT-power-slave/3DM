@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { BufferGeometryLoader } from 'three'
-import type { SceneSnapshot, GeometryType, GeometryParams } from '@3dm/shared-contracts'
+import type { SceneSnapshot, GeometryType, GeometryParams, MaterialDefinition } from '@3dm/shared-contracts'
 import { SCHEMA_VERSION } from '@3dm/shared-contracts'
 import { bus } from '@3dm/event-bus'
 
@@ -39,6 +39,35 @@ function buildGeometry(type: GeometryType = 'box', params: GeometryParams = {}):
   }
 }
 
+function buildViewerMaterial(
+  matDef: MaterialDefinition | undefined,
+  wireframe: boolean,
+  fallbackColor: string,
+): THREE.Material {
+  if (!matDef) {
+    return new THREE.MeshStandardMaterial({ color: fallbackColor, wireframe })
+  }
+  if (matDef.shadingModel === 'lambert') {
+    return new THREE.MeshLambertMaterial({
+      color: new THREE.Color(matDef.diffuseColor.r, matDef.diffuseColor.g, matDef.diffuseColor.b),
+      opacity: matDef.opacity,
+      transparent: matDef.opacity < 1,
+      wireframe,
+    })
+  }
+  const mat = new THREE.MeshPhongMaterial({
+    color: new THREE.Color(matDef.diffuseColor.r, matDef.diffuseColor.g, matDef.diffuseColor.b),
+    opacity: matDef.opacity,
+    transparent: matDef.opacity < 1,
+    wireframe,
+  })
+  if (matDef.specularColor) {
+    mat.specular = new THREE.Color(matDef.specularColor.r, matDef.specularColor.g, matDef.specularColor.b)
+  }
+  if (matDef.shininess != null) mat.shininess = matDef.shininess
+  return mat
+}
+
 export function Viewer3DPanel(): React.ReactElement {
   const mountRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
@@ -51,6 +80,8 @@ export function Viewer3DPanel(): React.ReactElement {
   const [localLightIntensity, setLocalLightIntensity] = useState(1)
   const viewerMeshesRef = useRef<THREE.Mesh[]>([])
   const viewerLightsRef = useRef<THREE.Light[]>([])
+  const materialLibRef = useRef<Map<string, MaterialDefinition>>(new Map())
+  const [materialVersion, setMaterialVersion] = useState(0)
 
   // Announce MFE ready
   useEffect(() => {
@@ -60,6 +91,19 @@ export function Viewer3DPanel(): React.ReactElement {
         mfeId: 'mfe-viewer',
         criticality: 'non-critical',
       })
+    })
+    return unsub
+  }, [])
+
+  // Track material definitions for scene rebuild
+  useEffect(() => {
+    const unsub = bus.on('material:reference', (ref) => {
+      if (ref.action === 'deleted') {
+        materialLibRef.current.delete(ref.material.materialId)
+      } else {
+        materialLibRef.current.set(ref.material.materialId, ref.material)
+      }
+      setMaterialVersion((v) => v + 1)
     })
     return unsub
   }, [])
@@ -210,10 +254,11 @@ export function Viewer3DPanel(): React.ReactElement {
         geo = buildGeometry(obj.geometryType, obj.geometryParams)
       }
 
-      const mat = new THREE.MeshStandardMaterial({
-        color: obj.color ?? '#3b82f6',
-        wireframe: displayMode === 'wireframe',
-      })
+      const mat = buildViewerMaterial(
+        obj.materialRef ? materialLibRef.current.get(obj.materialRef) : undefined,
+        displayMode === 'wireframe',
+        obj.color ?? '#3b82f6',
+      )
       const mesh = new THREE.Mesh(geo, mat)
       mesh.name = obj.name
       mesh.position.set(obj.position.x, obj.position.y, obj.position.z)
@@ -251,7 +296,7 @@ export function Viewer3DPanel(): React.ReactElement {
       controlsRef.current?.target.set(cam.target.x, cam.target.y, cam.target.z)
       controlsRef.current?.update()
     }
-  }, [snapshot, displayMode, localLightIntensity])
+  }, [snapshot, displayMode, localLightIntensity, materialVersion])
 
   const MODES: Array<{ id: DisplayMode; label: string }> = [
     { id: 'solid', label: '● Solid' },
