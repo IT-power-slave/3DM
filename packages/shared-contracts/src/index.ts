@@ -284,6 +284,13 @@ export interface SceneObject {
    * Flat array of vertex-index pairs: [i0, i1, i2, i3, ...] where each pair defines one edge.
    */
   wireframeEdges?: number[]
+  /**
+   * Serialized THREE.BufferGeometry JSON for 'merged-mesh' objects.
+   * Reconstructed in the viewer via BufferGeometryLoader.parse().
+   * Only present when type === 'merged-mesh'.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  geometryJSON?: Record<string, any>
 }
 
 // ─── Scene Snapshot Contract (MFE-3D → MFE-VIEWER, MFE-EXPORT) ───────────────

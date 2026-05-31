@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { BufferGeometryLoader } from 'three'
 import type { SceneSnapshot, GeometryType, GeometryParams } from '@3dm/shared-contracts'
 import { SCHEMA_VERSION } from '@3dm/shared-contracts'
 import { bus } from '@3dm/event-bus'
@@ -158,11 +159,12 @@ export function Viewer3DPanel(): React.ReactElement {
     // Dispose and remove previously tracked meshes (including wireframe children)
     viewerMeshesRef.current.forEach((m) => {
       m.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.geometry.dispose()
-          const mats = Array.isArray(child.material)
-            ? (child.material as THREE.Material[])
-            : [child.material as THREE.Material]
+        const c = child as THREE.Mesh | THREE.LineSegments
+        if (c.geometry) c.geometry.dispose()
+        if ((c as THREE.Mesh).material) {
+          const mats = Array.isArray((c as THREE.Mesh).material)
+            ? ((c as THREE.Mesh).material as THREE.Material[])
+            : [(c as THREE.Mesh).material as THREE.Material]
           mats.forEach((mat) => mat.dispose())
         }
       })
@@ -196,8 +198,18 @@ export function Viewer3DPanel(): React.ReactElement {
     })
 
     // Reconstruct objects with proper geometry
+    const geoLoader = new BufferGeometryLoader()
     snapshot.objects.forEach((obj) => {
-      const geo = buildGeometry(obj.geometryType, obj.geometryParams)
+      let geo: THREE.BufferGeometry
+
+      if (obj.type === 'merged-mesh' && obj.geometryJSON) {
+        // Deserialize the exact merged geometry sent by the editor
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        geo = geoLoader.parse(obj.geometryJSON as any)
+      } else {
+        geo = buildGeometry(obj.geometryType, obj.geometryParams)
+      }
+
       const mat = new THREE.MeshStandardMaterial({
         color: obj.color ?? '#3b82f6',
         wireframe: displayMode === 'wireframe',
@@ -212,6 +224,15 @@ export function Viewer3DPanel(): React.ReactElement {
       mesh.receiveShadow = true
       scene.add(mesh)
       viewerMeshesRef.current.push(mesh)
+
+      // Permanent wireframe edge overlay for merged objects (mirrors the editor overlay)
+      if (obj.type === 'merged-mesh') {
+        const edges = new THREE.EdgesGeometry(geo)
+        const wireMat = new THREE.LineBasicMaterial({ color: '#00ff88', transparent: true, opacity: 0.65 })
+        const wireframe = new THREE.LineSegments(edges, wireMat)
+        wireframe.name = '__wireframe__'
+        mesh.add(wireframe)
+      }
 
       if (displayMode === 'solid+wire') {
         const wireMat = new THREE.MeshBasicMaterial({

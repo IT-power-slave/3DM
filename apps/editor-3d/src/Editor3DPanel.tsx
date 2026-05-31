@@ -229,9 +229,10 @@ export function Editor3DPanel(): React.ReactElement {
     const objects: SceneObject[] = []
     objectsRef.current.forEach((mesh, id) => {
       const meta = metaRef.current.get(id)
+      const isMerged = meta?.objectType === 'merged-mesh'
       objects.push({
         objectId: id,
-        type: meta?.objectType === 'merged-mesh' ? 'merged-mesh' : 'mesh',
+        type: isMerged ? 'merged-mesh' : 'mesh',
         name: mesh.name,
         parentId: null,
         position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
@@ -245,9 +246,12 @@ export function Editor3DPanel(): React.ReactElement {
         visible: mesh.visible,
         castShadow: mesh.castShadow,
         receiveShadow: mesh.receiveShadow,
-        geometryType: meta?.geometryType,
-        geometryParams: meta?.geometryParams,
+        geometryType: isMerged ? undefined : meta?.geometryType,
+        geometryParams: isMerged ? undefined : meta?.geometryParams,
         color: meta?.color,
+        // For merged objects, send the full serialized geometry so the viewer
+        // can reconstruct the exact merged shape instead of falling back to a cube.
+        geometryJSON: isMerged ? (mesh.geometry.toJSON() as unknown as Record<string, unknown>) : undefined,
       })
     })
 
