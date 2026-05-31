@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "types": ["node"],
+    "paths": {
+      "@3dm/shared-contracts": ["../../packages/shared-contracts/src/index.ts"],
+      "@3dm/event-bus": ["../../packages/event-bus/src/index.ts"],
+      "@3dm/project-manager": ["../project-manager/src/index.ts"],
+      "@3dm/editor-2d": ["../editor-2d/src/index.ts"],
+      "@3dm/editor-3d": ["../editor-3d/src/index.ts"],
+      "@3dm/viewer-3d": ["../viewer-3d/src/index.ts"],
+      "@3dm/export": ["../export/src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
+
