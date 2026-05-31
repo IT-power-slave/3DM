@@ -10,14 +10,14 @@ individual MFE specifications.
 
 ### 1.2 Scope
 - **In scope:**
-  - All six shipping MFEs: MFE-SHELL, MFE-PROJECT, MFE-2D, MFE-3D, MFE-VIEWER, MFE-EXPORT
+  - All seven shipping MFEs: MFE-SHELL, MFE-PROJECT, MFE-2D, MFE-3D, MFE-VIEWER, MFE-EXPORT, MFE-MATERIALS
   - Cross-MFE contracts and observable integration behavior
   - System-level non-functional requirements
-  - Placeholder contracts for planned MFEs: MFE-MATERIALS, MFE-TEXTURES
+  - Placeholder contracts for planned MFEs: MFE-TEXTURES
 - **Out of scope:**
   - Internal implementation detail of any individual MFE
   - Build pipeline, runtime hosting, or deployment topology
-  - Material and texture authoring workflows (deferred to planned MFEs)
+  - Texture authoring workflows (deferred to planned MFE-TEXTURES)
   - Server-side rendering or collaboration features
 
 ### 1.3 Architectural Context
@@ -35,7 +35,7 @@ no server is required for core editing functionality.
 
 | Term | Definition |
 |---|---|
-| **Project** | A named, persistable workspace containing a 2D canvas state, a 3D scene state, and associated metadata. |
+| **Project** | A named, persistable workspace containing a 2D canvas state, a 3D scene state, a material library, and associated metadata. |
 | **Shape Descriptor** | A versioned, self-contained data structure representing a 2D vector shape produced by MFE-2D and consumable by MFE-3D. |
 | **Scene Snapshot** | A read-only, versioned representation of the current 3D scene state, consumed by MFE-VIEWER and MFE-EXPORT. |
 | **Project Context** | A shared, read-only representation of the active project's identity and status, produced by MFE-PROJECT. |
@@ -45,6 +45,11 @@ no server is required for core editing functionality.
 | **Dirty State** | A project whose in-memory state has been modified since the last save. |
 | **2D Canvas** | The vector editing surface managed by MFE-2D. |
 | **3D Scene** | The hierarchical collection of objects, lights, and cameras managed by MFE-3D. |
+| **Material Definition** | A named, versioned data record authored in MFE-MATERIALS that describes the shading model and visual properties of a surface, referenced by one or more scene objects. |
+| **Material Reference** | A published payload produced by MFE-MATERIALS and consumed by MFE-3D, MFE-VIEWER, and MFE-EXPORT, identifying a material definition by its stable `materialId` and carrying its full property set. |
+| **Default Material** | The fallback surface appearance applied by MFE-3D, MFE-VIEWER, and MFE-EXPORT to any scene object that carries no valid material reference. Visually equivalent to a Diffuse (Lambert) material with neutral gray diffuse color and full opacity. |
+| **Diffuse (Lambert) Material** | A shading model in which surface color is uniformly scattered regardless of the viewing angle, producing no specular highlight. |
+| **Specular (Phong / Blinn-Phong) Material** | A shading model that combines a diffuse component with a view-dependent specular highlight, whose width and intensity are controlled by the Shininess property. |
 
 ### 2.2 Microfrontend Roles
 
@@ -53,9 +58,10 @@ no server is required for core editing functionality.
 | **MFE-SHELL** | Composes all MFEs into a coherent workspace; owns global layout, navigation, and cross-MFE error boundaries. |
 | **MFE-PROJECT** | Owns project lifecycle: creation, opening, saving, closing, autosave, and recent projects. |
 | **MFE-2D** | Owns 2D vector editing: drawing tools, shape manipulation, canvas state, and Shape Descriptor publication. |
-| **MFE-3D** | Owns 3D scene authoring: primitives, 2D→3D conversion, transforms, and scene state. |
-| **MFE-VIEWER** | Provides a read-only, real-time preview of the 3D scene with user-configurable lights and cameras. |
-| **MFE-EXPORT** | Provides non-destructive rendering and file export for both 2D and 3D content. |
+| **MFE-3D** | Owns 3D scene authoring: primitives, 2D→3D conversion, transforms, material reference slots, and scene state. |
+| **MFE-VIEWER** | Provides a read-only, real-time preview of the 3D scene with user-configurable lights and cameras; renders objects using received Material References. |
+| **MFE-EXPORT** | Provides non-destructive rendering and file export for both 2D and 3D content; renders objects using received Material References. |
+| **MFE-MATERIALS** | Owns material definition authoring: creates, edits, and assigns Diffuse (Lambert) and Specular (Phong / Blinn-Phong) materials to scene objects; persists the material library as part of the project. |
 
 ---
 
@@ -67,11 +73,12 @@ creative environment, without requiring installation of any native software.
 
 ### 3.2 Key Scenarios
 
-1. **New project** — User creates a new project, draws 2D shapes, publishes them to the 3D editor, extrudes them into 3D objects, previews the result in the viewer, and exports the render as a PNG.
+1. **New project** — User creates a new project, draws 2D shapes, publishes them to the 3D editor, extrudes them into 3D objects, assigns a Specular (Phong / Blinn-Phong) material, previews the result in the viewer, and exports the render as a PNG.
 2. **Load and continue** — User opens a previously saved project file from disk, resumes editing in either the 2D or 3D editor, and saves changes.
 3. **3D-first workflow** — User creates 3D models entirely within the 3D editor using primitives, without using the 2D editor.
 4. **Quick preview** — User switches to the viewer, adjusts lighting and camera, and evaluates the scene appearance without modifying the scene.
 5. **Export only** — User opens a project and exports 2D shapes to SVG and 3D scene to PNG without further editing.
+6. **Material authoring** — User opens the Material Designer, creates a Diffuse (Lambert) material for matte surfaces and a Specular (Phong / Blinn-Phong) material for shiny surfaces, assigns them to different objects, and evaluates the result in the viewer under scene lighting.
 
 ---
 
@@ -133,14 +140,29 @@ creative environment, without requiring installation of any native software.
 - MFE-EXPORT shall allow the user to configure export parameters: output resolution (for PNG), background color/transparency, and camera/view selection.
 - MFE-EXPORT shall perform all export operations without modifying the active project or scene state.
 - MFE-EXPORT shall provide progress indication for operations that may take longer than two seconds.
+- MFE-EXPORT shall apply the received Material References to objects during 3D render and export; when no Material Reference is available for a given object, MFE-EXPORT shall render that object with the default material.
 
-### 4.7 Cross-MFE Observable Behaviors
-- When a user saves the project, all MFE panel states (2D canvas and 3D scene) shall be included in the saved file.
-- When a user opens a project, MFE-2D and MFE-3D shall restore their respective states from the project data.
+### 4.7 MFE-MATERIALS Requirements
+- MFE-MATERIALS shall provide a material library panel listing all named material definitions in the active project.
+- MFE-MATERIALS shall allow the user to create, rename, duplicate, and delete material definitions.
+- MFE-MATERIALS shall support the **Diffuse (Lambert)** shading model with the following editable properties: diffuse color (RGB) and opacity.
+- MFE-MATERIALS shall support the **Specular (Phong / Blinn-Phong)** shading model with the following editable properties: diffuse color (RGB), specular color (RGB), shininess exponent (integer 1–256), and opacity.
+- MFE-MATERIALS shall allow the user to switch the shading model of any material between Diffuse (Lambert) and Specular (Phong / Blinn-Phong) at any time.
+- MFE-MATERIALS shall allow the user to assign any material definition to one or more scene objects in MFE-3D via the Material Assignment Contract.
+- MFE-MATERIALS shall publish Material References to MFE-3D, MFE-VIEWER, and MFE-EXPORT whenever a material definition is created, modified, or deleted.
+- MFE-MATERIALS shall debounce Material Reference publication during continuous property editing: at most one publication per 100 ms of continuous editing activity.
+- MFE-MATERIALS shall persist its material library as part of the active project through MFE-PROJECT.
+- When MFE-MATERIALS is unavailable, all other MFEs shall remain fully functional; scene objects shall render with the default material.
+
+### 4.8 Cross-MFE Observable Behaviors
+- When a user saves the project, all MFE panel states (2D canvas, 3D scene, and material library) shall be included in the saved file.
+- When a user opens a project, MFE-2D, MFE-3D, and MFE-MATERIALS shall restore their respective states from the project data.
 - When a user publishes a shape from MFE-2D, the shape shall appear as an importable asset within MFE-3D without requiring the user to navigate away from MFE-3D.
+- When a material property is changed in MFE-MATERIALS, MFE-VIEWER shall update the rendered appearance of all objects referencing that material without any manual user action.
 - If MFE-3D is unavailable, MFE-2D shall remain fully functional and the publication action shall display a user-visible error.
 - If MFE-VIEWER is unavailable, MFE-3D shall remain fully functional.
 - If MFE-EXPORT is unavailable, the user shall be informed via a visible error within MFE-EXPORT's panel; all other MFEs shall remain unaffected.
+- If MFE-MATERIALS is unavailable, MFE-3D, MFE-VIEWER, and MFE-EXPORT shall render all objects with the default material; no error shall be surfaced within those MFE panels.
 
 ---
 
@@ -148,7 +170,7 @@ creative environment, without requiring installation of any native software.
 
 ### 5.1 Project Context Contract
 - **Producer:** MFE-PROJECT
-- **Consumers:** MFE-SHELL, MFE-2D, MFE-3D, MFE-VIEWER, MFE-EXPORT
+- **Consumers:** MFE-SHELL, MFE-2D, MFE-3D, MFE-VIEWER, MFE-EXPORT, MFE-MATERIALS
 - **Published fields (semantics):**
   - Active project name (display string)
   - Active project dirty/clean state (boolean)
@@ -198,17 +220,39 @@ creative environment, without requiring installation of any native software.
   - `formatHint`: optional preferred output format (`"png"` | `"svg"`)
 - **Failure behavior:** If export is triggered while no project is active, MFE-EXPORT shall display a user-visible informational message and take no further action.
 
-### 5.5 Planned MFE Stub Contracts
+### 5.5 Material Reference Contract (MFE-MATERIALS → MFE-3D, MFE-VIEWER, MFE-EXPORT)
 
-#### 5.5.1 Material Reference Contract (MFE-MATERIALS → MFE-3D, MFE-VIEWER, MFE-EXPORT)
-- **Status:** Stub — not yet implemented. Adjacent MFEs shall treat material data as optional.
-- **Expected payload semantics:** Material identifier, material type (e.g., plastic, glass, metal), visual property set.
-- **Constraint:** MFE-3D, MFE-VIEWER, and MFE-EXPORT shall render objects with a default material when no material reference is available.
+- **Producer:** MFE-MATERIALS
+- **Consumers:** MFE-3D (stores material reference on scene objects), MFE-VIEWER (renders assigned materials), MFE-EXPORT (renders assigned materials)
+- **Trigger:** Material definition created, modified, or deleted in MFE-MATERIALS; or project restored.
+- **Supported shading models:**
+  - `"lambert"` — Diffuse (Lambert): no specular component. Properties: `diffuseColor`, `opacity`.
+  - `"phong-blinn"` — Specular (Phong / Blinn-Phong): diffuse plus view-dependent specular highlight. Properties: `diffuseColor`, `specularColor`, `shininess` (integer 1–256), `opacity`.
+- **Key payload fields:** `schemaVersion`, `materialId` (stable UUID), `name`, `shadingModel`, `diffuseColor { r,g,b }`, `specularColor { r,g,b } | null`, `shininess integer | null`, `opacity`.
+- **Constraints:**
+  - Consumers shall treat payload as immutable.
+  - When `shadingModel` is `"lambert"`, consumers shall apply no specular computation regardless of any specular fields present.
+  - Consumers shall fall back to the default material for any unresolvable `materialId`.
+  - MFE-3D, MFE-VIEWER, and MFE-EXPORT shall render objects with the default material when MFE-MATERIALS is absent or unavailable.
+- **Compatibility:** Additive changes only; breaking changes require `schemaVersion` increment.
+- **Authoritative detail:** See `docs/specs/mfe-materials/spec.md`, section 5.1.
 
-#### 5.5.2 Texture Reference Contract (MFE-TEXTURES → MFE-MATERIALS)
+### 5.6 Material Assignment Contract (MFE-MATERIALS → MFE-3D)
+
+- **Producer:** MFE-MATERIALS
+- **Consumer:** MFE-3D
+- **Trigger:** User assigns a material to one or more scene objects from MFE-MATERIALS
+- **Request payload:** `materialId` (UUID), `objectIds` (array of scene object UUIDs)
+- **Response payload:** `accepted` (array of `objectId`), `rejected` (array of `{ objectId, reason }`)
+- **Constraint:** MFE-3D shall respond within two seconds; MFE-MATERIALS shall display a timeout error if no response is received.
+- **Authoritative detail:** See `docs/specs/mfe-materials/spec.md`, section 5.2.
+
+### 5.7 Planned MFE Stub Contracts
+
+#### 5.7.1 Texture Reference Contract (MFE-TEXTURES → MFE-MATERIALS)
 - **Status:** Stub — not yet implemented.
 - **Expected payload semantics:** Texture identifier, texture format, resolution metadata.
-- **Constraint:** MFE-MATERIALS shall treat texture references as optional.
+- **Constraint:** MFE-MATERIALS shall treat texture references as optional; material definitions shall function without texture references.
 
 ---
 

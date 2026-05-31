@@ -227,10 +227,17 @@ geometry derived from 2D vector shapes, with full transform control and hierarch
 - **Payload semantics:** Full, serializable representation of the scene graph, including geometry, transforms, hierarchy, material references, and camera definitions.
 - **Response timeout:** MFE-3D shall respond within five seconds.
 
-### 5.4 Material Reference Contract (Consumer — Planned Stub)
-- **Producer:** MFE-MATERIALS (planned)
-- **Status:** Stub — not yet implemented.
-- **Constraint:** Until MFE-MATERIALS is available, MFE-3D shall apply a default material to all objects. Material reference slots shall be reserved on each object but may be null.
+### 5.4 Material Reference Contract (Consumer)
+
+- **Producer:** MFE-MATERIALS
+- **Status:** Active — MFE-MATERIALS is now specified (see `docs/specs/mfe-materials/spec.md`).
+- **Trigger:** MFE-MATERIALS publishes a Material Reference when a material definition is created, modified, deleted, or after project restore.
+- **Consumed fields:** `schemaVersion`, `materialId`, `name`, `shadingModel` (`"lambert"` | `"phong-blinn"`), `diffuseColor`, `specularColor`, `shininess`, `opacity`.
+- **Constraints:**
+  - MFE-3D shall store the `materialId` reference on the relevant scene object(s) upon a successful Material Assignment Request; MFE-3D shall not store a copy of the material's property values.
+  - MFE-3D shall apply the default material (neutral gray, Diffuse / Lambert, fully opaque) to any scene object whose `materialId` reference cannot be resolved.
+  - MFE-3D shall pass `materialRef` (the `materialId`) as part of the Scene Snapshot so that MFE-VIEWER and MFE-EXPORT can resolve the material independently from their own Material Reference subscriptions.
+  - MFE-3D shall not crash or display an error if MFE-MATERIALS is absent; default material rendering is the required degraded behavior.
 
 ### 5.5 Dirty-State Signal Contract (Producer)
 - **Consumer:** MFE-PROJECT
@@ -291,6 +298,8 @@ geometry derived from 2D vector shapes, with full transform control and hierarch
 - Given three unlocked mesh objects are selected in the viewport, when the user invokes Object Merge and confirms in the Merge dialog with default settings, then a single merged-mesh object appears at the geometric centroid of the combined bounding box of the source objects, the three source objects are removed from the scene, the merged object displays a permanent wireframe edge overlay in the editing viewport, and an updated Scene Snapshot is published immediately.
 - Given the Merge dialog is displayed with the pre-populated name "Merged_ObjectA", when the user replaces it with "CombinedHull" before confirming, then the merged object is created with the name "CombinedHull" and appears under that name in both the viewport and the scene hierarchy outliner.
 - Given two mesh objects are selected and the user enables the "Keep Source Objects" toggle before confirming the Merge dialog, when the merge is confirmed, then the merged object is created as a root-level scene object, and both source objects remain present in the scene hierarchy with their `visible` flag set to false; no source object is deleted.
+- Given MFE-MATERIALS assigns a Specular (Phong / Blinn-Phong) material to a scene object via a Material Assignment Request, when MFE-3D receives and accepts the request, then MFE-3D stores the `materialId` reference on the object, includes `materialRef` in the next Scene Snapshot, and the object renders with the assigned material in MFE-VIEWER.
+- Given MFE-MATERIALS is not available, when the user adds a primitive or imports a shape, then MFE-3D renders the resulting object with the default material (neutral gray, Diffuse / Lambert, fully opaque) without displaying an error.
 
 ### 7.2 Edge Cases
 - Given a Shape Descriptor with `schemaVersion` not supported by MFE-3D, then MFE-3D displays an error in the import panel, does not add the shape to the queue, and sends a rejection acknowledgment to MFE-2D.
@@ -320,6 +329,7 @@ geometry derived from 2D vector shapes, with full transform control and hierarch
 - [x] Is undo/redo scoped to MFE-3D only, or should it be unified with MFE-2D in a global history? **Resolved: per-MFE. Ctrl+Z / Ctrl+Y are dispatched to the MFE panel that currently holds keyboard focus; they are not registered in the global shortcut registry.**
 - [ ] Should camera definitions saved in the scene be separate from viewer-configured cameras, or the same set? (owner: Product, due: TBD)
 - [x] Are basic scene lights (ambient, directional) editable within MFE-3D, or only within MFE-VIEWER? **Resolved: ambient and directional lights are scene objects authored in MFE-3D and included in the Scene Snapshot. MFE-VIEWER may add local preview-only overrides that do not affect the scene or export.**
+- [x] Are material properties (diffuse color, specular, shininess) editable within MFE-3D, or only within MFE-MATERIALS? **Resolved: material authoring is the exclusive responsibility of MFE-MATERIALS. MFE-3D holds a `materialId` reference slot on each object and accepts Material Assignment Requests from MFE-MATERIALS; it does not expose material property editing controls.**
 - [ ] Should MFE-3D support GLB/OBJ import of existing 3D models? (owner: Product, due: TBD)
 - [ ] What level of mesh decimation or LOD is required for performance at scale? (owner: Engineering, due: TBD)
 - [ ] Should the sweep path be definable only by placing points, or also by referencing an existing 2D path from MFE-2D? (owner: Product, due: TBD)
